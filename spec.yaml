@@ -9,10 +9,7 @@ agent:
   persistence: persistent
   entrypoint:
     run:
-      - sh
-      - -lc
-      - 'case " $* " in *" --model "*|*" --model="*) exec little-coder --no-update-check "$@" ;; *) model="${LITTLE_CODER_MODEL:-llamacpp/${LITTLE_CODER_MODEL_ID:-qwen3.6-35b-a3b-64k}}"; exec little-coder --no-update-check --model "$model" "$@" ;; esac'
-      - little-coder
+      - little-coder-dmr
 
 network:
   allowedDomains:
@@ -24,7 +21,7 @@ environment:
     IS_SANDBOX: "1"
     LITTLE_CODER_NO_UPDATE_CHECK: "1"
     LITTLE_CODER_CONTEXT_LIMIT: "64000"
-    LITTLE_CODER_MODEL_ID: "qwen3.6-35b-a3b-64k"
+    LITTLE_CODER_MODEL_ID: "__REQUIRED_MODEL_ID__"
     PI_OFFLINE: "1"
     LLAMACPP_API_KEY: "docker-model-runner"
     LLAMACPP_BASE_URL: "http://host.docker.internal:12434/v1"
@@ -35,11 +32,74 @@ commands:
       user: "1000"
       description: Install little-coder from npm
     - command: |
-        node <<'NODE'
+        cat > /usr/local/share/npm-global/bin/little-coder-dmr <<'SH'
+        #!/usr/bin/env sh
+        set -eu
+
+        sentinel="__REQUIRED_MODEL_ID__"
+        context_limit="${LITTLE_CODER_CONTEXT_LIMIT:-64000}"
+        explicit_model=0
+        model=""
+        expect_model_value=0
+
+        for arg in "$@"; do
+          if [ "$expect_model_value" = "1" ]; then
+            model="$arg"
+            explicit_model=1
+            break
+          fi
+          case "$arg" in
+            --model)
+              expect_model_value=1
+              ;;
+            --model=*)
+              model="${arg#--model=}"
+              explicit_model=1
+              break
+              ;;
+          esac
+        done
+
+        if [ -z "$model" ]; then
+          if [ -n "${LITTLE_CODER_MODEL:-}" ]; then
+            model="$LITTLE_CODER_MODEL"
+          else
+            model_id="${LITTLE_CODER_MODEL_ID:-$sentinel}"
+            if [ -z "$model_id" ] || [ "$model_id" = "$sentinel" ]; then
+              cat >&2 <<'EOF'
+        little-coder Docker Model Runner kit requires an explicit model.
+
+        Pass the Docker Model Runner model tag through little-coder's --model flag:
+
+          sbx run --kit git+https://github.com/shelajev/little-coder-sbx-kit.git \
+            little-coder-model-runner . -- --model llamacpp/qwen3.6-35b-a3b-64k
+
+        For an existing sandbox:
+
+          sbx run --kit git+https://github.com/shelajev/little-coder-sbx-kit.git \
+            <sandbox-name> -- --model llamacpp/qwen3.6-35b-a3b-64k
+
+        If you need the 64k Qwen variant first:
+
+          docker model package --from qwen3.6-35b-a3b --context-size 64000 qwen3.6-35b-a3b-64k
+
+        Replace qwen3.6-35b-a3b-64k with any tag shown by `docker model list`.
+        EOF
+              sleep 2
+              exit 64
+            fi
+            model="llamacpp/$model_id"
+          fi
+        fi
+
+        case "$model" in
+          llamacpp/*)
+            model_id="${model#llamacpp/}"
+            MODEL_ID="$model_id" MODEL_CONTEXT_LIMIT="$context_limit" node <<'NODE'
         const fs = require("node:fs");
         const root = "/usr/local/share/npm-global/lib/node_modules/little-coder";
-        const modelId = process.env.LITTLE_CODER_MODEL_ID || "qwen3.6-35b-a3b-64k";
-        const contextLimit = Number.parseInt(process.env.LITTLE_CODER_CONTEXT_LIMIT || "64000", 10);
+        const modelId = process.env.MODEL_ID;
+        const contextLimit = Number.parseInt(process.env.MODEL_CONTEXT_LIMIT || "64000", 10);
 
         const modelsPath = `${root}/models.json`;
         const modelsConfig = JSON.parse(fs.readFileSync(modelsPath, "utf8"));
@@ -70,5 +130,15 @@ commands:
         };
         fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
         NODE
+            ;;
+        esac
+
+        if [ "$explicit_model" = "1" ]; then
+          exec little-coder --no-update-check "$@"
+        fi
+
+        exec little-coder --no-update-check --model "$model" "$@"
+        SH
+        chmod +x /usr/local/share/npm-global/bin/little-coder-dmr
       user: "1000"
-      description: Add configured Docker Model Runner model profile to little-coder
+      description: Install little-coder Docker Model Runner launcher

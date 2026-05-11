@@ -11,7 +11,7 @@ agent:
     run:
       - sh
       - -lc
-      - 'model="${LITTLE_CODER_MODEL:-llamacpp/${LITTLE_CODER_MODEL_ID:-qwen3.6-35b-a3b-64k}}"; exec little-coder --no-update-check --model "$model" "$@"'
+      - 'case " $* " in *" --model "*|*" --model="*) exec little-coder --no-update-check "$@" ;; *) model="${LITTLE_CODER_MODEL:-llamacpp/${LITTLE_CODER_MODEL_ID:-qwen3.6-35b-a3b-64k}}"; exec little-coder --no-update-check --model "$model" "$@" ;; esac'
       - little-coder
 
 network:

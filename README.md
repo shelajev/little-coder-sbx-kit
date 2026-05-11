@@ -2,6 +2,13 @@
 
 Docker Sandboxes kit for running [`little-coder`](https://github.com/itayinbarr/little-coder) against a local Docker Model Runner endpoint.
 
+Create and run a sandbox in the current directory:
+
+```bash
+sbx run --kit git+https://github.com/shelajev/little-coder-sbx-kit.git \
+  little-coder-model-runner . -- --model llamacpp/qwen3.6-35b-a3b-64k
+```
+
 The kit does not guess which local model you have. You must pass a model explicitly:
 
 ```bash
@@ -68,11 +75,11 @@ Then run the kit with:
 
 ## Run
 
-Create and run a sandbox in the current directory:
+Create and run a sandbox with another Docker Model Runner tag:
 
 ```bash
 sbx run --kit git+https://github.com/shelajev/little-coder-sbx-kit.git \
-  little-coder-model-runner . -- --model llamacpp/qwen3.6-35b-a3b-64k
+  little-coder-model-runner . -- --model llamacpp/<docker-model-tag>
 ```
 
 Create a named sandbox:
